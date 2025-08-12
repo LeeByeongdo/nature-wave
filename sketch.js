@@ -1,15 +1,28 @@
 let yoff;
-let waveAmplitude;
-let targetWaveAmplitude;
-let baseWaveAmplitude;
+let waveAmplitudes;
+let targetWaveAmplitudes;
+let baseWaveAmplitudes;
+const waveSegmentSize = 10;
+let numWaveSegments;
 let surfer;
+
+function initializeWaves() {
+  numWaveSegments = floor(width / waveSegmentSize) + 1;
+  waveAmplitudes = [];
+  targetWaveAmplitudes = [];
+  baseWaveAmplitudes = [];
+
+  for (let i = 0; i < numWaveSegments; i++) {
+    baseWaveAmplitudes[i] = 20;
+    waveAmplitudes[i] = baseWaveAmplitudes[i];
+    targetWaveAmplitudes[i] = baseWaveAmplitudes[i];
+  }
+}
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
   yoff = 0.0;
-  baseWaveAmplitude = 20;
-  waveAmplitude = baseWaveAmplitude;
-  targetWaveAmplitude = baseWaveAmplitude;
+  initializeWaves();
   surfer = new Surfer(width / 2, height / 2 - 200);
 }
 
@@ -27,8 +40,25 @@ function draw() {
   fill(244, 164, 96); // Sand color
   rect(0, height - 100, width, 100);
 
-  waveAmplitude = lerp(waveAmplitude, targetWaveAmplitude, 0.1);
-  targetWaveAmplitude = lerp(targetWaveAmplitude, baseWaveAmplitude, 0.02);
+  // Wave propagation
+  const propagationFactor = 0.1; // Increased from 0.05
+  // Propagate from left to right
+  for (let i = 1; i < numWaveSegments; i++) {
+    targetWaveAmplitudes[i] = lerp(targetWaveAmplitudes[i], targetWaveAmplitudes[i - 1], propagationFactor);
+  }
+  // Propagate from right to left
+  for (let i = numWaveSegments - 2; i >= 0; i--) {
+    targetWaveAmplitudes[i] = lerp(targetWaveAmplitudes[i], targetWaveAmplitudes[i + 1], propagationFactor);
+  }
+
+  // Damping and updating the visible wave
+  for (let i = 0; i < numWaveSegments; i++) {
+    // Damping: return to base amplitude
+    targetWaveAmplitudes[i] = lerp(targetWaveAmplitudes[i], baseWaveAmplitudes[i], 0.01); // Reduced from 0.02
+    // Update actual wave amplitude for drawing
+    waveAmplitudes[i] = lerp(waveAmplitudes[i], targetWaveAmplitudes[i], 0.1);
+  }
+
 
   let gravity = createVector(0, 0.4);
   surfer.applyForce(gravity);
@@ -72,7 +102,10 @@ function draw() {
       let n = noise(x * 0.1, yoff * 1.5, yoff);
       if (n > 0.65) {
           let y = getWaveY(x);
-          let foamSize = map(waveAmplitude, 20, 100, 2, 20) * map(n, 0.65, 1, 0, 1);
+          let segmentIndex = floor(x / waveSegmentSize);
+          segmentIndex = constrain(segmentIndex, 0, numWaveSegments - 1);
+          let currentWaveAmplitude = waveAmplitudes[segmentIndex];
+          let foamSize = map(currentWaveAmplitude, 20, 100, 2, 20) * map(n, 0.65, 1, 0, 1);
           ellipse(x + random(-10, 10), y + random(-5, 5), foamSize, foamSize * 0.8);
       }
   }
@@ -83,15 +116,24 @@ function draw() {
 }
 
 function getWaveY(x) {
-    let x_index_prev = floor(x / 10);
+    let x_index_prev = floor(x / waveSegmentSize);
     let x_index_next = x_index_prev + 1;
+
+    x_index_prev = constrain(x_index_prev, 0, numWaveSegments - 1);
+    x_index_next = constrain(x_index_next, 0, numWaveSegments - 1);
+
     let xoff_prev = x_index_prev * 0.05;
     let xoff_next = x_index_next * 0.05;
     let y_prev_noise = noise(xoff_prev, yoff);
     let y_next_noise = noise(xoff_next, yoff);
-    let y_prev = map(y_prev_noise, 0, 1, -waveAmplitude, waveAmplitude) + height - 100;
-    let y_next = map(y_next_noise, 0, 1, -waveAmplitude, waveAmplitude) + height - 100;
-    let t = (x % 10) / 10.0;
+
+    let amp_prev = waveAmplitudes[x_index_prev];
+    let amp_next = waveAmplitudes[x_index_next];
+
+    let y_prev = map(y_prev_noise, 0, 1, -amp_prev, amp_prev) + height - 100;
+    let y_next = map(y_next_noise, 0, 1, -amp_next, amp_next) + height - 100;
+
+    let t = (x % waveSegmentSize) / waveSegmentSize;
     return lerp(y_prev, y_next, t);
 }
 
@@ -102,11 +144,16 @@ function getWaveAngle(x) {
 }
 
 function keyPressed() {
-  targetWaveAmplitude = 100;
+  if (keyCode === LEFT_ARROW) {
+    targetWaveAmplitudes[0] = 100;
+  } else if (keyCode === RIGHT_ARROW) {
+    targetWaveAmplitudes[numWaveSegments - 1] = 100;
+  }
 }
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
+  initializeWaves();
 }
 
 class Surfer {
@@ -200,6 +247,8 @@ class ParticleSystem {
     addParticle() {
         this.particles.push(new Particle(this.origin));
     }
+
+
 
     run() {
         for (let i = this.particles.length - 1; i >= 0; i--) {
